@@ -85,7 +85,7 @@ class SqlModel implements ISQLiteItem {
     var searchItems = await connection.search(SqlModel(), 'title', 'title 1');
     //search by multiple columns with single query
     var results = await connection.whereSearchOr(SqlModel(), ['title', 'value'], query);
-    
+
     // Returns a list of items with titles 'title1' and 'title2', using a batch query for efficiency.
     var results = await connection.toListWhereValuesAre(SqlModel(), 'title', ['title1', 'title2']);
 
@@ -93,6 +93,15 @@ class SqlModel implements ISQLiteItem {
     connection.deleteRecords(SqlModel());
     //Delete table
     connection.deleteTable(SqlModel());
+
+
+
+    Future<String> getTemporaryDatabasePath() async {
+    final directory = await getTemporaryDirectory();
+    final path = join(directory.path, 'your_database.db');
+    print(path);
+    return path;
+  }
 ```
 
-[pub.dev](https://pub.dev/packages/sqlite_flutter_pcl)
+[https://pub.dev/packages/sqlite_flutter_pcl](https://pub.dev/packages/sqlite_flutter_pcl)

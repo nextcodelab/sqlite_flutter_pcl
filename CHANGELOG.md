@@ -1,3 +1,7 @@
+## 0.0.40
+
+* Github repository updated
+
 ## 0.0.39
 
 * Minor
