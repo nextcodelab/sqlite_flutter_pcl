@@ -558,6 +558,39 @@ class SQLiteConnection {
     return results;
   }
 
+  Future<List<ISQLiteItem>> searchColumns(
+      ISQLiteItem item, List<String> columnNames, String query,
+      {int? limit}) async {
+    var database = await getOpenDatabase();
+    String table = item.getTableName();
+    List<ISQLiteItem> results = [];
+
+    // Construct the "OR" condition for multiple columns
+    List<String> whereConditions = [];
+    List<dynamic> whereArgs = [];
+    for (var columnName in columnNames) {
+      whereConditions.add("$columnName LIKE ? COLLATE NOCASE");
+      whereArgs.add('%$query%');
+    }
+
+    // Join the conditions with "OR"
+    String whereClause = whereConditions.join(' OR ');
+
+    // Execute the query
+    var maps = await database.query(
+      table,
+      columns: null, // Fetch all columns
+      where: whereClause,
+      whereArgs: whereArgs,
+      limit: limit,
+    );
+
+    // Map the results to ISQLiteItem instances
+    results = maps.map((map) => item.fromMap(map)).toList();
+
+    return results;
+  }
+
   Future<int> getCount(ISQLiteItem item) async {
     var db = await getOpenDatabase();
     var count =

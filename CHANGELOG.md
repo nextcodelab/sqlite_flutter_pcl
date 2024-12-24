@@ -1,3 +1,7 @@
+## 0.0.41
+
+* Added search across multiple columns.  `var items = await db.searchColumns(Strongs(), columnNames, query);`
+
 ## 0.0.40
 
 * Github repository updated

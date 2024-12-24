@@ -88,6 +88,10 @@ class SqlModel implements ISQLiteItem {
 
     // Returns a list of items with titles 'title1' and 'title2', using a batch query for efficiency.
     var results = await connection.toListWhereValuesAre(SqlModel(), 'title', ['title1', 'title2']);
+    
+    //Search across multiple columns. 
+    var columnNames = ['word', 'number', 'lemma', 'xlit', 'pronounce', 'description'];
+    var items = await db.searchColumns(Strongs(), columnNames, query);
 
     //Delete all table records
     connection.deleteRecords(SqlModel());
