@@ -1,6 +1,4 @@
-
-
-abstract class ISQLiteItem {
+abstract class ISQLiteItem{
   String getTableName();
   int? getPrimaryKey();
   String getPrimaryKeyName();

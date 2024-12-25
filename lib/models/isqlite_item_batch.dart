@@ -1,4 +1,3 @@
-
 import 'package:sqlite_flutter_pcl/sqlite_flutter_pcl.dart';
 
 class SQLiteItemBatch {
@@ -12,6 +11,9 @@ class SQLiteItemBatch {
       return hasSaved;
     }
     if (newList.isNotEmpty) {
+      for (var t in newList) {
+        t.id = 0;
+      }
       await db.insertAll(newList);
       hasSaved = true;
     }

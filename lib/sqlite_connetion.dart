@@ -38,7 +38,7 @@ class SQLiteConnection {
   Future<List<ISQLiteItem>> toListWhere(
     ISQLiteItem item,
     String columnName,
-    String columnValueOf,
+    dynamic columnValueOf, // Allow any type (int, double, String, etc.)
   ) async {
     String condition = '$columnName = ?';
     List<ISQLiteItem> results = [];
@@ -48,7 +48,41 @@ class SQLiteConnection {
     var maps = await db.query(
       item.getTableName(),
       where: condition,
-      whereArgs: [columnValueOf], // Pass the value as an array
+      whereArgs: [
+        columnValueOf
+      ], // Pass the value as an array (can be int, double, or String)
+    );
+
+    results = maps.map((map) => item.fromMap(map)).toList();
+    return results;
+  }
+
+  Future<List<ISQLiteItem>> toListWhereColumns(
+    ISQLiteItem item,
+    Map<String, dynamic>
+        columnValues, // Map of column names and their dynamic values
+  ) async {
+    List<ISQLiteItem> results = [];
+    var db = await getOpenDatabase();
+
+    String tableName = item.getTableName();
+
+    // Build the WHERE clause dynamically based on the provided column names
+    List<String> whereConditions = [];
+    List<dynamic> whereArgs = [];
+
+    columnValues.forEach((columnName, value) {
+      whereConditions.add('$columnName = ?');
+      whereArgs.add(value);
+    });
+
+    String condition = whereConditions.join(' AND ');
+
+    // Query the database
+    var maps = await db.query(
+      tableName,
+      where: condition,
+      whereArgs: whereArgs,
     );
 
     results = maps.map((map) => item.fromMap(map)).toList();
@@ -203,7 +237,7 @@ class SQLiteConnection {
   }
 
   Future<List<ISQLiteItem>> where(
-      ISQLiteItem item, String columnName, String columnValueOf,
+      ISQLiteItem item, String columnName, dynamic columnValueOf,
       {int? limit}) async {
     String condition = '$columnName = ?';
     List<ISQLiteItem> results = [];
@@ -221,7 +255,7 @@ class SQLiteConnection {
   Future<ISQLiteItem?> whereSingle(
     ISQLiteItem item,
     String columnName,
-    String columnValueOf,
+    dynamic columnValueOf,
   ) async {
     String condition = '$columnName = ?';
     var db = await getOpenDatabase();
@@ -236,6 +270,37 @@ class SQLiteConnection {
       return item.fromMap(maps.first); // Return the first matching item
     } else {
       return null; // Return null if no match found
+    }
+  }
+
+  Future<ISQLiteItem?> whereSingleColumns(
+    ISQLiteItem item,
+    Map<String, dynamic> columnValues, // Map of column names and their values
+  ) async {
+    List<String> whereConditions = [];
+    List<dynamic> whereArgs = [];
+
+    // Build the WHERE clause dynamically based on the provided column names and values
+    columnValues.forEach((columnName, value) {
+      whereConditions.add('$columnName = ?');
+      whereArgs.add(value);
+    });
+
+    // Join all conditions with "AND"
+    String condition = whereConditions.join(' AND ');
+
+    var db = await getOpenDatabase();
+    var maps = await db.query(
+      item.getTableName(),
+      where: condition,
+      whereArgs: whereArgs, // Pass the column values as an array
+      limit: 1, // Set limit to 1 to return only a single item
+    );
+
+    if (maps.isNotEmpty) {
+      return item.fromMap(maps.first); // Return the first matching item
+    } else {
+      return null; // Return null if no match is found
     }
   }
 
@@ -591,6 +656,64 @@ class SQLiteConnection {
     return results;
   }
 
+  /// Groups the results of a database query by a specified column and returns the results as a list of [ISQLiteItem] instances.
+  ///
+  /// This function allows you to dynamically group by any column and select specific columns, optionally sorting and removing duplicates.
+  ///
+  /// Parameters:
+  /// - [item]: The model instance (conforming to [ISQLiteItem]) that defines the table and the `fromMap` method for mapping the query result.
+  /// - [columns]: A list of column names to select in the query.
+  /// - [groupByColumnName]: The column name used to group the results. Rows with the same value in this column are combined.
+  /// - [orderByColumn] (optional): A column name to order the results by. If not provided, no ordering is applied.
+  /// - [distinct] (optional): A flag to indicate if duplicates should be removed from the results. Default is `true`.
+  ///
+  /// Returns:
+  /// - A list of [ISQLiteItem] instances, each representing a row from the grouped query result.
+  ///
+  /// Example Usage:
+  /// ```dart
+  /// List<String> columns = ['book', 'chapter', 'verse', 'content'];
+  /// String groupByColumn = 'book';  // Group by the 'book' column
+  /// String orderByColumn = 'chapter';  // Order by the 'chapter' column
+  /// bool removeDuplicates = true;  // Remove duplicates from results
+  ///
+  /// List<ISQLiteItem> items = await groupBy(
+  ///   BookCozens(),
+  ///   columns,
+  ///   groupByColumn,
+  ///   orderByColumn: orderByColumn,  // Provide the column for ordering
+  ///   distinct: removeDuplicates,  // Optional flag for duplicates
+  /// );
+  /// ```
+  Future<List<ISQLiteItem>> groupBy(
+      ISQLiteItem item, List<String> columns, String groupByColumnName,
+      {String? orderByColumn, bool distinct = true}) async {
+    var database = await getOpenDatabase();
+    String tableName = item.getTableName();
+
+    // Dynamically construct the SQL query with GROUP BY
+    String query =
+        'SELECT ${columns.join(', ')} FROM $tableName GROUP BY $groupByColumnName';
+
+    // Add an ORDER BY clause if orderByColumn is provided
+    if (orderByColumn != null) {
+      query += ' ORDER BY $orderByColumn';
+    }
+
+    // Execute the query
+    final List<Map<String, dynamic>> maps = await database.rawQuery(query);
+
+    // Convert the List<Map<String, dynamic>> into a List of ISQLiteItem
+    var results = maps.map((map) => item.fromMap(map)).toList();
+
+    // Optional: Remove duplicates (like your toSet().toList() in getSQLBooks)
+    if (distinct) {
+      results = results.toSet().toList();
+    }
+
+    return results;
+  }
+
   Future<int> getCount(ISQLiteItem item) async {
     var db = await getOpenDatabase();
     var count =
@@ -741,16 +864,18 @@ class SQLiteConnection {
     await db.execute(createTableQuery);
     //start primarykey to 1
     // Check the current sequence value for the table
-    var currentSeq = Sqflite.firstIntValue(
-            await db.rawQuery('PRAGMA table_info($tableName)')) ??
-        0;
 
     // If the current sequence value is 0, reset it to 1
-    if (currentSeq < 1) {
-      await db.rawUpdate(
-        'UPDATE sqlite_sequence SET seq = 1 WHERE name = ?',
-        [tableName],
-      );
+    if (autoIncrement && map.containsKey('id')) {
+      var currentSeq = Sqflite.firstIntValue(
+              await db.rawQuery('PRAGMA table_info($tableName)')) ??
+          0;
+      if (currentSeq < 1) {
+        await db.rawUpdate(
+          'UPDATE sqlite_sequence SET seq = 1 WHERE name = ?',
+          [tableName],
+        );
+      }
     }
   }
 
