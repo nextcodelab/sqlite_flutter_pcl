@@ -257,10 +257,11 @@ class SQLiteConnection {
     String columnName,
     dynamic columnValueOf,
   ) async {
+    var table = item.getTableName();
     String condition = '$columnName = ?';
     var db = await getOpenDatabase();
     var maps = await db.query(
-      item.getTableName(),
+      table,
       where: condition,
       whereArgs: [columnValueOf], // Pass the value as an array
       limit: 1, // Set limit to 1 to return only a single item
