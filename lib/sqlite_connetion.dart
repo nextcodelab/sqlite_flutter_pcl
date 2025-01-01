@@ -20,7 +20,7 @@ class SQLiteConnection {
     return database;
   }
 
-  Future<List<ISQLiteItem>> toList(ISQLiteItem item) async {
+  Future<List<ISQLiteItem>> fetchAll(ISQLiteItem item) async {
     final db = await getOpenDatabase();
     final tableName = item.getTableName();
     final List<Map<String, dynamic>> results = await db.query(tableName);
@@ -30,12 +30,16 @@ class SQLiteConnection {
     return items;
   }
 
+  Future<List<ISQLiteItem>> toList(ISQLiteItem item) async {
+    return await fetchAll(item);
+  }
+
   /// Retrieves a list of items that match the exact condition for the specified column.
   /// This method does not account for case differences; it performs a case-sensitive match.
   ///
   /// Example usage:
   /// var results = await connection.toListWhere(yourItem, 'column_name', 'value_to_match');
-  Future<List<ISQLiteItem>> toListWhere(
+  Future<List<ISQLiteItem>> findByColumnValue(
     ISQLiteItem item,
     String columnName,
     dynamic columnValueOf, // Allow any type (int, double, String, etc.)
@@ -57,15 +61,19 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<List<ISQLiteItem>> toListWhereColumns(
+  Future<List<ISQLiteItem>> findByColumns(
     ISQLiteItem item,
     Map<String, dynamic>
         columnValues, // Map of column names and their dynamic values
   ) async {
     List<ISQLiteItem> results = [];
     var db = await getOpenDatabase();
-
     String tableName = item.getTableName();
+
+    // Check if the columnValues map is empty
+    if (columnValues.isEmpty) {
+      return [];
+    }
 
     // Build the WHERE clause dynamically based on the provided column names
     List<String> whereConditions = [];
@@ -78,14 +86,21 @@ class SQLiteConnection {
 
     String condition = whereConditions.join(' AND ');
 
-    // Query the database
-    var maps = await db.query(
-      tableName,
-      where: condition,
-      whereArgs: whereArgs,
-    );
+    try {
+      // Query the database
+      var maps = await db.query(
+        tableName,
+        where: condition,
+        whereArgs: whereArgs,
+      );
 
-    results = maps.map((map) => item.fromMap(map)).toList();
+      // Convert the query results into a list of ISQLiteItem objects
+      results = maps.map((map) => item.fromMap(map)).toList();
+    } catch (e) {
+      // Handle any database errors that may occur
+      //print('Error querying database: $e');
+    }
+
     return results;
   }
 
@@ -109,79 +124,94 @@ class SQLiteConnection {
   Future<int> insert(ISQLiteItem item) async {
     var db = await getOpenDatabase();
     var map = item.toMap();
+    final tableName = item.getTableName();
+    var existingColumns = await getTableColumns(tableName, db: db);
+    map.removeWhere((key, value) => !existingColumns.contains(key));
     if (map[item.getPrimaryKeyName()] is int &&
         map[item.getPrimaryKeyName()] == 0) {
       map[item.getPrimaryKeyName()] = null;
     }
-    var row = await db.insert(item.getTableName(), map);
+    var row = await db.insert(tableName, map);
     return row;
   }
 
-  Future<int> insertAllSlow(List<ISQLiteItem> items) async {
-    var db = await getOpenDatabase();
-    var totalRow = 0;
-    for (var item in items) {
-      var map = item.toMap();
-      if (map[item.getPrimaryKeyName()] is int &&
-          map[item.getPrimaryKeyName()] == 0) {
-        map[item.getPrimaryKeyName()] = null;
-      }
-      await db.insert(item.getTableName(), map);
-      totalRow++;
+  Future<int> insertAll(
+    List<ISQLiteItem> items,
+  ) async {
+    if (items.isEmpty) {
+      return 0;
     }
-    return totalRow;
-  }
 
-  Future<int> insertAll(List<ISQLiteItem> items) async {
     var db = await getOpenDatabase();
     int totalRow = 0;
+
+    // Get table name from the first item (assumes all items have the same table)
+    var tableName = items.first.getTableName();
+    var existingColumns = await getTableColumns(tableName, db: db);
 
     await db.transaction((txn) async {
       for (var item in items) {
         var map = item.toMap();
-        // Ensure primary key is null for auto-increment
+        map.removeWhere((key, value) => !existingColumns.contains(key));
         if (map[item.getPrimaryKeyName()] is int &&
             map[item.getPrimaryKeyName()] == 0) {
           map[item.getPrimaryKeyName()] = null;
         }
-
-        // Insert the record and capture the result
-        var result = await txn.insert(item.getTableName(), map);
-        var id = result;
-        totalRow++;
+        var result = await txn.insert(tableName, map);
+        if (result > 0) {
+          totalRow++;
+        }
       }
     });
+
     return totalRow;
   }
 
   Future<void> update(ISQLiteItem item) async {
     final db = await getOpenDatabase();
     final map = item.toMap();
+    final tableName = item.getTableName();
+    var existingColumns = await getTableColumns(tableName, db: db);
+    map.removeWhere((key, value) => !existingColumns.contains(key));
     final id = map[item.getPrimaryKeyName()];
 
-    if (id != null) {
-      // Perform an update with the same ID
-      await db.update(item.getTableName(), map,
+    if (id != null && id > 0) {
+      await db.update(tableName, map,
           where: '${item.getPrimaryKeyName()} = ?', whereArgs: [id]);
-    } else {
-      // Handle the case where ID is null (e.g., insert as a new record or raise an error)
     }
   }
 
-  Future<void> updateAll(List<ISQLiteItem> items) async {
-    final db = await getOpenDatabase();
-    for (var item in items) {
-      final map = item.toMap();
-      final id = map[item.getPrimaryKeyName()];
+  Future<int> updateAll(
+    List<ISQLiteItem> items,
+  ) async {
+    if (items.isEmpty) return 0; // Early exit if the list is empty
 
-      if (id != null) {
-        // Perform an update with the same ID
-        await db.update(item.getTableName(), map,
-            where: '${item.getPrimaryKeyName()} = ?', whereArgs: [id]);
-      } else {
-        // Handle the case where ID is null (e.g., insert as a new record or raise an error)
+    var db = await getOpenDatabase();
+    int totalRow = 0;
+
+    // Get table name from the first item (assumes all items have the same table)
+    var tableName = items.first.getTableName();
+    List<String> existingColumns = [];
+    existingColumns = await getTableColumns(tableName, db: db);
+    await db.transaction((txn) async {
+      for (var item in items) {
+        var map = item.toMap();
+        map.removeWhere((key, value) => !existingColumns.contains(key));
+        if (map[item.getPrimaryKeyName()] is int &&
+            map[item.getPrimaryKeyName()] == 0) {
+          map[item.getPrimaryKeyName()] = null;
+        }
+        final id = map[item.getPrimaryKeyName()];
+        if (id != null && id > 0) {
+          var result = await txn.update(tableName, map);
+          if (result > 0) {
+            totalRow++;
+          }
+        }
       }
-    }
+    });
+
+    return totalRow;
   }
 
   Future<int> delete(ISQLiteItem item) async {
@@ -203,56 +233,51 @@ class SQLiteConnection {
 
   Future<int> deleteAll(List<ISQLiteItem> items) async {
     var db = await getOpenDatabase();
-    var totalDeleted = 0;
-    for (var item in items) {
-      final primaryKeyValue = item.toMap()[item.getPrimaryKeyName()];
+    int totalDeleted = 0;
 
-      if (primaryKeyValue != null) {
-        await db.delete(
-          item.getTableName(),
-          where: '${item.getPrimaryKeyName()} = ?',
-          whereArgs: [primaryKeyValue],
-        );
-        totalDeleted++;
-      } else {
-        // Handle the case where the primary key is null (e.g., raise an error).
-        // Return 0 to indicate that no rows were deleted.
+    await db.transaction((txn) async {
+      for (var item in items) {
+        final id = item.getPrimaryKey();
+
+        if (id != null) {
+          int rowsDeleted = await txn.delete(
+            item.getTableName(),
+            where: '${item.getPrimaryKeyName()} = ?',
+            whereArgs: [id],
+          );
+          if (rowsDeleted > 0) {
+            totalDeleted++;
+          }
+        }
       }
-    }
+    });
+
     return totalDeleted;
   }
 
-  Future<void> deleteTable(ISQLiteItem item) async {
-    final database = await getOpenDatabase();
-    await database.execute('DROP TABLE IF EXISTS ${item.getTableName()}');
-    database.close();
-  }
-
-  Future<void> deleteRecords(ISQLiteItem item) async {
-    final db = await getOpenDatabase();
-    await db.rawDelete('DELETE FROM ${item.getTableName()}');
-    // Reset the auto-increment primary key to 1
-    await db.rawUpdate(
-        'DELETE FROM sqlite_sequence WHERE name = ?', [item.getTableName()]);
-  }
-
-  Future<List<ISQLiteItem>> where(
+  Future<List<ISQLiteItem>> findByColumn(
       ISQLiteItem item, String columnName, dynamic columnValueOf,
       {int? limit}) async {
-    String condition = '$columnName = ?';
+    String tableName = item.getTableName();
     List<ISQLiteItem> results = [];
     var db = await getOpenDatabase();
+
+    String condition = '$columnName = ?';
+
     var maps = await db.query(
-      item.getTableName(),
+      tableName,
       where: condition,
       whereArgs: [columnValueOf], // Pass the value as an array
       limit: limit,
     );
+
+    // Map the results to items
     results = maps.map((map) => item.fromMap(map)).toList();
+
     return results;
   }
 
-  Future<ISQLiteItem?> whereSingle(
+  Future<ISQLiteItem?> findSingleByColumn(
     ISQLiteItem item,
     String columnName,
     dynamic columnValueOf,
@@ -260,6 +285,7 @@ class SQLiteConnection {
     var table = item.getTableName();
     String condition = '$columnName = ?';
     var db = await getOpenDatabase();
+
     var maps = await db.query(
       table,
       where: condition,
@@ -274,7 +300,7 @@ class SQLiteConnection {
     }
   }
 
-  Future<ISQLiteItem?> whereSingleColumns(
+  Future<ISQLiteItem?> findSingleByColumns(
     ISQLiteItem item,
     Map<String, dynamic> columnValues, // Map of column names and their values
   ) async {
@@ -313,7 +339,7 @@ class SQLiteConnection {
   /// @param columnName The name of the column to filter by.
   /// @param columnValueList A list of values to filter the query by.
   /// @return A list of `ISQLiteItem` objects that match the query criteria.
-  Future<List<ISQLiteItem>> toListWhereValuesAre(
+  Future<List<ISQLiteItem>> findAllByColumnValues(
     ISQLiteItem item,
     String columnName,
     List<String> columnValueList,
@@ -350,13 +376,7 @@ class SQLiteConnection {
     }
   }
 
-  Future<Batch> getBatch() async {
-    final db = await getOpenDatabase();
-    final batch = db.batch();
-    return batch;
-  }
-
-  Future<List<ISQLiteItem>> whereAnd(
+  Future<List<ISQLiteItem>> findWhereAllMatch(
       ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -383,7 +403,7 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<List<ISQLiteItem>> whereOr(
+  Future<List<ISQLiteItem>> findColumnValuesAny(
       ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -399,63 +419,6 @@ class SQLiteConnection {
     });
 
     String condition = whereConditions.join(' OR ');
-
-    var maps = await db.query(
-      tableName,
-      where: condition,
-      whereArgs: whereArgs,
-      limit: limit,
-    );
-    results = maps.map((map) => item.fromMap(map)).toList();
-    return results;
-  }
-
-  /// Performs a case-sensitive search in multiple columns of an SQLite table with AND condition.
-  ///
-  /// This method searches for the specified values in the given [columnNameAndValues]
-  /// of the [tableName] and returns a list of items that match all the search criteria.
-  /// It uses the LIKE operator for searching.
-  ///
-  /// Parameters:
-  /// - [item]: An instance of ISQLiteItem representing the database table schema.
-  /// - [columnNameAndValues]: A map of column names and values to search for.
-  ///
-  /// Returns a list of ISQLiteItem objects that match all the search criteria.
-  ///
-  /// Example:
-  ///
-  /// ```dart
-  /// List<ISQLiteItem> searchResults = await whereSearchAnd(
-  ///   MyDatabaseItem(), // Replace with your ISQLiteItem implementation
-  ///   {
-  ///     'title': 'flutter',
-  ///     'category': 'mobile',
-  ///   },
-  /// );
-  ///
-  /// for (var result in searchResults) {
-  ///   print(result.toString());
-  /// }
-  /// ```
-
-  Future<List<ISQLiteItem>> whereSearchAnd(
-      ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
-      {int? limit}) async {
-    String tableName = item.getTableName();
-    List<ISQLiteItem> results = [];
-    var db = await getOpenDatabase();
-
-    List<String> whereConditions = [];
-    List<dynamic> whereArgs = [];
-
-    columnNameAndValues.forEach((columnName, columnValue) {
-      // Modify the condition to use LIKE for searching
-      whereConditions.add('$columnName LIKE ?');
-      // Modify the whereArgs to use '%' for wildcard search
-      whereArgs.add('%$columnValue%');
-    });
-
-    String condition = whereConditions.join(' AND ');
 
     var maps = await db.query(
       tableName,
@@ -495,7 +458,7 @@ class SQLiteConnection {
   /// }
   /// ```
 
-  Future<List<ISQLiteItem>> whereSearchExactAnd(
+  Future<List<ISQLiteItem>> findByColumnsMatch(
       ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -512,61 +475,6 @@ class SQLiteConnection {
     });
 
     String condition = whereConditions.join(' AND ');
-
-    var maps = await db.query(
-      tableName,
-      where: condition,
-      whereArgs: whereArgs,
-      limit: limit,
-    );
-    results = maps.map((map) => item.fromMap(map)).toList();
-    return results;
-  }
-
-  /// Performs a case-insensitive search in multiple columns of an SQLite table.
-  ///
-  /// This method searches for the specified query in the given [columnNames] of the
-  /// [tableName] and returns a list of items that match the search criteria. It uses
-  /// the LIKE operator for searching and COLLATE NOCASE for case-insensitivity.
-  ///
-  /// Parameters:
-  /// - [item]: An instance of ISQLiteItem representing the database table schema.
-  /// - [columnNames]: A list of column names to search in.
-  /// - [query]: The search query to match against the specified columns.
-  ///
-  /// Returns a list of ISQLiteItem objects that match the search criteria.
-  ///
-  /// Example:
-  ///
-  /// ```dart
-  /// List<ISQLiteItem> searchResults = await whereSearchOr(
-  ///   MyDatabaseItem(), // Replace with your ISQLiteItem implementation
-  ///   ['title', 'description', 'author'],
-  ///   'flutter',
-  /// );
-  ///
-  /// for (var result in searchResults) {
-  ///   print(result.toString());
-  /// }
-  /// ```
-
-  Future<List<ISQLiteItem>> whereSearchOr(
-      ISQLiteItem item, List<String> columnNames, String query,
-      {int? limit}) async {
-    String tableName = item.getTableName();
-    List<ISQLiteItem> results = [];
-    var db = await getOpenDatabase();
-
-    List<String> whereConditions = [];
-    List<dynamic> whereArgs = [];
-
-    // Modify the condition to use LIKE for searching and COLLATE NOCASE for case-insensitivity
-    for (var columnName in columnNames) {
-      whereConditions.add('$columnName LIKE ? COLLATE NOCASE');
-      whereArgs.add('%$query%');
-    }
-
-    String condition = whereConditions.join(' OR ');
 
     var maps = await db.query(
       tableName,
@@ -607,7 +515,7 @@ class SQLiteConnection {
   /// }
   /// ```
 
-  Future<List<ISQLiteItem>> search(
+  Future<List<ISQLiteItem>> findByColumnAny(
       ISQLiteItem item, String columnName, String query,
       {int? limit}) async {
     var database = await getOpenDatabase();
@@ -624,7 +532,7 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<List<ISQLiteItem>> searchColumns(
+  Future<List<ISQLiteItem>> findByColumnsAny(
       ISQLiteItem item, List<String> columnNames, String query,
       {int? limit}) async {
     var database = await getOpenDatabase();
@@ -678,7 +586,7 @@ class SQLiteConnection {
   /// String orderByColumn = 'chapter';  // Order by the 'chapter' column
   /// bool removeDuplicates = true;  // Remove duplicates from results
   ///
-  /// List<ISQLiteItem> items = await groupBy(
+  /// List<ISQLiteItem> items = await getGroupedItems(
   ///   BookCozens(),
   ///   columns,
   ///   groupByColumn,
@@ -686,7 +594,7 @@ class SQLiteConnection {
   ///   distinct: removeDuplicates,  // Optional flag for duplicates
   /// );
   /// ```
-  Future<List<ISQLiteItem>> groupBy(
+  Future<List<ISQLiteItem>> getGroupedItems(
       ISQLiteItem item, List<String> columns, String groupByColumnName,
       {String? orderByColumn, bool distinct = true}) async {
     var database = await getOpenDatabase();
@@ -740,7 +648,7 @@ class SQLiteConnection {
     return null;
   }
 
-  Future<ISQLiteItem?> getItemByListIndex(ISQLiteItem item, int index) async {
+  Future<ISQLiteItem?> getItemAtIndex(ISQLiteItem item, int index) async {
     var db = await getOpenDatabase();
 
     // Using LIMIT and OFFSET to get the row at the specified index
@@ -757,7 +665,54 @@ class SQLiteConnection {
     return null; // Return null if the index is out of range or no data
   }
 
+  Future<List<String>> getTableColumns(String tableName, {Database? db}) async {
+    db ??= await getOpenDatabase();
+    var result = await db.rawQuery("PRAGMA table_info($tableName)");
+    return result.map((column) => column['name'] as String).toList();
+  }
+
   //Helpers
+  Future<Batch> getBatch() async {
+    final db = await getOpenDatabase();
+    final batch = db.batch();
+    return batch;
+  }
+
+  Future<void> dropTable(ISQLiteItem item) async {
+    final db = await getOpenDatabase();
+
+    // Drop the table if it exists
+    await db.execute('DROP TABLE IF EXISTS ${item.getTableName()}');
+
+    // Perform vacuum to clean up and reclaim space
+    await db.execute('VACUUM');
+  }
+
+  Future<void> vacuum(ISQLiteItem item) async {
+    final db = await getOpenDatabase();
+    // Perform vacuum to clean up and reclaim space
+    await db.execute('VACUUM');
+  }
+
+  Future<void> deleteRecords(ISQLiteItem item) async {
+    final db = await getOpenDatabase();
+
+    // Perform operations in a transaction for atomicity
+    await db.transaction((txn) async {
+      // Delete all records from the table
+      await txn.rawDelete('DELETE FROM ${item.getTableName()}');
+
+      // Check if the table has an INTEGER PRIMARY KEY before resetting the auto-increment
+      final hasPrimaryKey =
+          await txn.rawQuery('PRAGMA table_info(${item.getTableName()})');
+      if (hasPrimaryKey.any((column) => column['pk'] == 1)) {
+        await txn.rawUpdate(
+          'DELETE FROM sqlite_sequence WHERE name = ?',
+          [item.getTableName()],
+        );
+      }
+    });
+  }
 
   /// Retrieves a paginated list of items from the SQLite database.
   ///

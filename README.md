@@ -56,7 +56,7 @@ class SqlModel implements ISQLiteItem {
    //Init if SQLiteConnection not initialize when new instance created
     SQLiteConnection.initDatabaseLib();
     //Sqlite filepath
-    final databasePath = await getTemporaryDatabasePath();
+    final databasePath = await getTemporaryDatabaseFilePath();
     final connection = SQLiteConnection(path: databasePath);
     //create table
     connection.createTable(SqlModel());
@@ -64,7 +64,7 @@ class SqlModel implements ISQLiteItem {
     var newItem = SqlModel(title: 'Title 1', value: 'Value 1');
     await connection.insert(newItem);
     //retrieve items
-    var isqliteItems = await connection.toList(SqlModel());
+    var isqliteItems = await connection.fetchAll(SqlModel());
     //convert to type list
     var items = isqliteItems.whereType<SqlModel>().toList();
     var items = isqliteItems.cast<SqlModel>().toList();
@@ -78,29 +78,25 @@ class SqlModel implements ISQLiteItem {
     //delete items
     await connection.deleteAll(items);
     //query single value
-    var queryItems = await connection.whereSingle(SqlModel(), 'title', 'Title 1');
+    var queryItems = await connection.findSingleByColumn(SqlModel(), 'title', 'Title 1');
     //query items by value
-    var queryItems = await connection.where(SqlModel(), 'title', 'Title 1');
-    //search items
-    var searchItems = await connection.search(SqlModel(), 'title', 'title 1');
-    //search by multiple columns with single query
-    var results = await connection.whereSearchOr(SqlModel(), ['title', 'value'], query);
+    var queryItems = await connection.findByColumn(SqlModel(), 'title', 'Title 1');
 
     // Returns a list of items with titles 'title1' and 'title2', using a batch query for efficiency.
-    var results = await connection.toListWhereValuesAre(SqlModel(), 'title', ['title1', 'title2']);
+    var results = await connection.findAllByColumnValues(SqlModel(), 'title', ['title1', 'title2']);
     
     //Search across multiple columns. 
     var columnNames = ['word', 'number', 'lemma', 'xlit', 'pronounce', 'description'];
-    var items = await db.searchColumns(Strongs(), columnNames, query);
+    var items = await db.findByColumnsAny(Strongs(), columnNames, query);
 
     //Delete all table records
     connection.deleteRecords(SqlModel());
-    //Delete table
-    connection.deleteTable(SqlModel());
+    //Drop table
+    connection.dropTable(SqlModel());
 
 
 
-    Future<String> getTemporaryDatabasePath() async {
+    Future<String> getTemporaryDatabaseFilePath() async {
     final directory = await getTemporaryDirectory();
     final path = join(directory.path, 'your_database.db');
     print(path);
