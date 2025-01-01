@@ -2,7 +2,7 @@
 library sqlite_flutter_pcl;
 
 export 'package:sqlite_flutter_pcl/models/isqlite_item_batch.dart';
-export 'package:sqlite_flutter_pcl/sqlite_connetion.dart';
+export 'package:sqlite_flutter_pcl/sqlite_connection.dart';
 export 'dart:io';
 export 'dart:typed_data';
 export 'package:sqflite/sqflite.dart';

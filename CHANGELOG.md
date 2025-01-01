@@ -1,3 +1,7 @@
+## 0.0.47
+
+- Minor
+
 ## 0.0.45
 
 - Method renames back.

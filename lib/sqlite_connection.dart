@@ -20,59 +20,118 @@ class SQLiteConnection {
     return database;
   }
 
-  Future<List<ISQLiteItem>> fetchAll(ISQLiteItem item) async {
-    final db = await getOpenDatabase();
-    final tableName = item.getTableName();
-    final List<Map<String, dynamic>> results = await db.query(tableName);
-    // Convert the query results into a list of ISQLiteItem objects
-    final List<ISQLiteItem> items =
-        results.map((map) => item.fromMap(map)).toList();
-    return items;
-  }
-
-  Future<List<ISQLiteItem>> toList(ISQLiteItem item) async {
-    return await fetchAll(item);
-  }
-
-  /// Retrieves a list of items that match the exact condition for the specified column.
-  /// This method does not account for case differences; it performs a case-sensitive match.
+  /// Performs a case-insensitive search in a specified column of an SQLite table.
   ///
-  /// Example usage:
-  /// var results = await connection.toListWhere(yourItem, 'column_name', 'value_to_match');
-  Future<List<ISQLiteItem>> toListWhere(
-    ISQLiteItem item,
-    String columnName,
-    dynamic columnValueOf, // Allow any type (int, double, String, etc.)
-  ) async {
-    String condition = '$columnName = ?';
+  /// This method searches for the specified [query] in the [columnName] of the [tableName] and returns
+  /// a list of items that match the search criteria. It uses the LIKE operator for searching and
+  /// COLLATE NOCASE for case-insensitivity.
+  ///
+  /// Parameters:
+  /// - [item]: An instance of ISQLiteItem representing the database table schema.
+  /// - [columnName]: The name of the column to search in.
+  /// - [query]: The search query to match against the specified column.
+  /// - [limit]: (Optional) The maximum number of results to return.
+  ///
+  /// Returns a list of ISQLiteItem objects that match the search criteria.
+  ///
+  /// Example:
+  ///
+  /// ```dart
+  /// List<ISQLiteItem> searchResults = await search(
+  ///   MyDatabaseItem(), // Replace with your ISQLiteItem implementation
+  ///   'title',
+  ///   'flutter',
+  ///   limit: 10,
+  /// );
+  ///
+  /// for (var result in searchResults) {
+  ///   print(result.toString());
+  /// }
+  /// ```
+
+  Future<List<ISQLiteItem>> search(
+      ISQLiteItem item, String columnName, String query,
+      {int? limit}) async {
+    var database = await getOpenDatabase();
+    String table = item.getTableName();
     List<ISQLiteItem> results = [];
-    var db = await getOpenDatabase();
-
-    // Remove limit to fetch all results
-    var maps = await db.query(
-      item.getTableName(),
-      where: condition,
-      whereArgs: [
-        columnValueOf
-      ], // Pass the value as an array (can be int, double, or String)
+    var maps = await database.query(
+      table,
+      columns: null, // Fetch all columns
+      where: "$columnName LIKE ? COLLATE NOCASE",
+      whereArgs: ['%$query%'],
+      limit: limit,
     );
-
     results = maps.map((map) => item.fromMap(map)).toList();
     return results;
   }
 
-  Future<List<ISQLiteItem>> toListWhereMap(
-    ISQLiteItem item,
-    Map<String, dynamic>
-        columnValues, // Map of column names and their dynamic values
-  ) async {
+  Future<List<ISQLiteItem>> searchColumns(
+      ISQLiteItem item, List<String> columnNames, String query,
+      {int? limit}) async {
+    var database = await getOpenDatabase();
+    String table = item.getTableName();
     List<ISQLiteItem> results = [];
+
+    // Construct the "OR" condition for multiple columns
+    List<String> whereConditions = [];
+    List<dynamic> whereArgs = [];
+    for (var columnName in columnNames) {
+      whereConditions.add("$columnName LIKE ? COLLATE NOCASE");
+      whereArgs.add('%$query%');
+    }
+
+    // Join the conditions with "OR"
+    String whereClause = whereConditions.join(' OR ');
+
+    // Execute the query
+    var maps = await database.query(
+      table,
+      columns: null, // Fetch all columns
+      where: whereClause,
+      whereArgs: whereArgs,
+      limit: limit,
+    );
+
+    // Map the results to ISQLiteItem instances
+    results = maps.map((map) => item.fromMap(map)).toList();
+
+    return results;
+  }
+
+  Future<ISQLiteItem?> whereColumnHasValue(
+    ISQLiteItem item,
+    String columnName,
+    dynamic columnValueOf,
+  ) async {
+    var table = item.getTableName();
+    String condition = '$columnName = ?';
+    var db = await getOpenDatabase();
+
+    var maps = await db.query(
+      table,
+      where: condition,
+      whereArgs: [columnValueOf], // Pass the value as an array
+      limit: 1, // Set limit to 1 to return only a single item
+    );
+
+    if (maps.isNotEmpty) {
+      return item.fromMap(maps.first); // Return the first matching item
+    } else {
+      return null; // Return null if no match found
+    }
+  }
+
+  Future<ISQLiteItem?> whereMapMatch(
+    ISQLiteItem item,
+    Map<String, dynamic> columnValues,
+  ) async {
     var db = await getOpenDatabase();
     String tableName = item.getTableName();
 
     // Check if the columnValues map is empty
     if (columnValues.isEmpty) {
-      return [];
+      return null;
     }
 
     // Build the WHERE clause dynamically based on the provided column names
@@ -92,19 +151,22 @@ class SQLiteConnection {
         tableName,
         where: condition,
         whereArgs: whereArgs,
+        limit: 1,
       );
-
-      // Convert the query results into a list of ISQLiteItem objects
-      results = maps.map((map) => item.fromMap(map)).toList();
+      if (maps.isNotEmpty) {
+        return item.fromMap(maps.first); // Return the first matching item
+      } else {
+        return null; // Return null if no match found
+      }
     } catch (e) {
       // Handle any database errors that may occur
       //print('Error querying database: $e');
     }
 
-    return results;
+    return null;
   }
 
-  Future<List<ISQLiteItem>> getRandomItems(ISQLiteItem item, int count) async {
+  Future<List<ISQLiteItem>> random(ISQLiteItem item, int count) async {
     final db = await getOpenDatabase();
     final tableName = item.getTableName();
 
@@ -255,6 +317,87 @@ class SQLiteConnection {
     return totalDeleted;
   }
 
+  Future<List<ISQLiteItem>> toList(ISQLiteItem item) async {
+    final db = await getOpenDatabase();
+    final tableName = item.getTableName();
+    final List<Map<String, dynamic>> results = await db.query(tableName);
+    if (results.isEmpty) {
+      return [];
+    }
+    final List<ISQLiteItem> items =
+        results.map((map) => item.fromMap(map)).toList();
+    return items;
+  }
+
+  /// Retrieves a list of items that match the exact condition for the specified column.
+  /// This method does not account for case differences; it performs a case-sensitive match.
+  ///
+  /// Example usage:
+  /// var results = await connection.toListWhere(yourItem, 'column_name', 'value_to_match');
+  Future<List<ISQLiteItem>> toListWhereColumnHasValueMatch(
+    ISQLiteItem item,
+    String columnName,
+    dynamic columnValueOf, // Allow any type (int, double, String, etc.)
+  ) async {
+    String condition = '$columnName = ?';
+    List<ISQLiteItem> results = [];
+    var db = await getOpenDatabase();
+
+    // Remove limit to fetch all results
+    var maps = await db.query(
+      item.getTableName(),
+      where: condition,
+      whereArgs: [
+        columnValueOf
+      ], // Pass the value as an array (can be int, double, or String)
+    );
+
+    results = maps.map((map) => item.fromMap(map)).toList();
+    return results;
+  }
+
+  Future<List<ISQLiteItem>> toListWhereMapMatch(
+    ISQLiteItem item,
+    Map<String, dynamic> columnValues,
+  ) async {
+    List<ISQLiteItem> results = [];
+    var db = await getOpenDatabase();
+    String tableName = item.getTableName();
+
+    // Check if the columnValues map is empty
+    if (columnValues.isEmpty) {
+      return [];
+    }
+
+    // Build the WHERE clause dynamically based on the provided column names
+    List<String> whereConditions = [];
+    List<dynamic> whereArgs = [];
+
+    columnValues.forEach((columnName, value) {
+      whereConditions.add('$columnName = ?');
+      whereArgs.add(value);
+    });
+
+    String condition = whereConditions.join(' AND ');
+
+    try {
+      // Query the database
+      var maps = await db.query(
+        tableName,
+        where: condition,
+        whereArgs: whereArgs,
+      );
+
+      // Convert the query results into a list of ISQLiteItem objects
+      results = maps.map((map) => item.fromMap(map)).toList();
+    } catch (e) {
+      // Handle any database errors that may occur
+      //print('Error querying database: $e');
+    }
+
+    return results;
+  }
+
   Future<List<ISQLiteItem>> toListWhereColumnHasValue(
       ISQLiteItem item, String columnName, dynamic columnValueOf,
       {int? limit}) async {
@@ -275,60 +418,6 @@ class SQLiteConnection {
     results = maps.map((map) => item.fromMap(map)).toList();
 
     return results;
-  }
-
-  Future<ISQLiteItem?> whereColumnHasValue(
-    ISQLiteItem item,
-    String columnName,
-    dynamic columnValueOf,
-  ) async {
-    var table = item.getTableName();
-    String condition = '$columnName = ?';
-    var db = await getOpenDatabase();
-
-    var maps = await db.query(
-      table,
-      where: condition,
-      whereArgs: [columnValueOf], // Pass the value as an array
-      limit: 1, // Set limit to 1 to return only a single item
-    );
-
-    if (maps.isNotEmpty) {
-      return item.fromMap(maps.first); // Return the first matching item
-    } else {
-      return null; // Return null if no match found
-    }
-  }
-
-  Future<ISQLiteItem?> toListWhereMapMatch(
-    ISQLiteItem item,
-    Map<String, dynamic> columnValues, // Map of column names and their values
-  ) async {
-    List<String> whereConditions = [];
-    List<dynamic> whereArgs = [];
-
-    // Build the WHERE clause dynamically based on the provided column names and values
-    columnValues.forEach((columnName, value) {
-      whereConditions.add('$columnName = ?');
-      whereArgs.add(value);
-    });
-
-    // Join all conditions with "AND"
-    String condition = whereConditions.join(' AND ');
-
-    var db = await getOpenDatabase();
-    var maps = await db.query(
-      item.getTableName(),
-      where: condition,
-      whereArgs: whereArgs, // Pass the column values as an array
-      limit: 1, // Set limit to 1 to return only a single item
-    );
-
-    if (maps.isNotEmpty) {
-      return item.fromMap(maps.first); // Return the first matching item
-    } else {
-      return null; // Return null if no match is found
-    }
   }
 
   /// Fetches multiple items from the database based on a specific column and a list of values.
@@ -376,34 +465,7 @@ class SQLiteConnection {
     }
   }
 
-  Future<List<ISQLiteItem>> toListWhereMapAreMatch(
-      ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
-      {int? limit}) async {
-    String tableName = item.getTableName();
-    List<ISQLiteItem> results = [];
-    var db = await getOpenDatabase();
-
-    List<String> whereConditions = [];
-    List<dynamic> whereArgs = [];
-
-    columnNameAndValues.forEach((columnName, columnValue) {
-      whereConditions.add('$columnName = ?');
-      whereArgs.add(columnValue);
-    });
-
-    String condition = whereConditions.join(' AND ');
-
-    var maps = await db.query(
-      tableName,
-      where: condition,
-      whereArgs: whereArgs,
-      limit: limit,
-    );
-    results = maps.map((map) => item.fromMap(map)).toList();
-    return results;
-  }
-
-  Future<List<ISQLiteItem>> findColumnValuesAny(
+  Future<List<ISQLiteItem>> toListWhereMapContains(
       ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -427,141 +489,6 @@ class SQLiteConnection {
       limit: limit,
     );
     results = maps.map((map) => item.fromMap(map)).toList();
-    return results;
-  }
-
-  /// Performs a search in multiple columns of an SQLite table with exact matching (no "LIKE" operator)
-  /// and an "AND" condition.
-  ///
-  /// This method searches for the specified exact values in the given [columnNameAndValues] of the
-  /// [tableName] and returns a list of items that match all the search criteria.
-  ///
-  /// Parameters:
-  /// - [item]: An instance of ISQLiteItem representing the database table schema.
-  /// - [columnNameAndValues]: A map of column names and exact values to search for.
-  ///
-  /// Returns a list of ISQLiteItem objects that match all the search criteria.
-  ///
-  /// Example:
-  ///
-  /// ```dart
-  /// List<ISQLiteItem> searchResults = await whereSearchExactAnd(
-  ///   MyDatabaseItem(), // Replace with your ISQLiteItem implementation
-  ///   {
-  ///     'title': 'Flutter',
-  ///     'category': 'Mobile',
-  ///   },
-  /// );
-  ///
-  /// for (var result in searchResults) {
-  ///   print(result.toString());
-  /// }
-  /// ```
-
-  Future<List<ISQLiteItem>> toListWhereMapAnd(
-      ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
-      {int? limit}) async {
-    String tableName = item.getTableName();
-    List<ISQLiteItem> results = [];
-    var db = await getOpenDatabase();
-
-    List<String> whereConditions = [];
-    List<dynamic> whereArgs = [];
-
-    columnNameAndValues.forEach((columnName, columnValue) {
-      // Modify the condition to use = for exact matching
-      whereConditions.add('$columnName = ?');
-      whereArgs.add(columnValue);
-    });
-
-    String condition = whereConditions.join(' AND ');
-
-    var maps = await db.query(
-      tableName,
-      where: condition,
-      whereArgs: whereArgs,
-      limit: limit,
-    );
-    results = maps.map((map) => item.fromMap(map)).toList();
-    return results;
-  }
-
-  /// Performs a case-insensitive search in a specified column of an SQLite table.
-  ///
-  /// This method searches for the specified [query] in the [columnName] of the [tableName] and returns
-  /// a list of items that match the search criteria. It uses the LIKE operator for searching and
-  /// COLLATE NOCASE for case-insensitivity.
-  ///
-  /// Parameters:
-  /// - [item]: An instance of ISQLiteItem representing the database table schema.
-  /// - [columnName]: The name of the column to search in.
-  /// - [query]: The search query to match against the specified column.
-  /// - [limit]: (Optional) The maximum number of results to return.
-  ///
-  /// Returns a list of ISQLiteItem objects that match the search criteria.
-  ///
-  /// Example:
-  ///
-  /// ```dart
-  /// List<ISQLiteItem> searchResults = await search(
-  ///   MyDatabaseItem(), // Replace with your ISQLiteItem implementation
-  ///   'title',
-  ///   'flutter',
-  ///   limit: 10,
-  /// );
-  ///
-  /// for (var result in searchResults) {
-  ///   print(result.toString());
-  /// }
-  /// ```
-
-  Future<List<ISQLiteItem>> search(
-      ISQLiteItem item, String columnName, String query,
-      {int? limit}) async {
-    var database = await getOpenDatabase();
-    String table = item.getTableName();
-    List<ISQLiteItem> results = [];
-    var maps = await database.query(
-      table,
-      columns: null, // Fetch all columns
-      where: "$columnName LIKE ? COLLATE NOCASE",
-      whereArgs: ['%$query%'],
-      limit: limit,
-    );
-    results = maps.map((map) => item.fromMap(map)).toList();
-    return results;
-  }
-
-  Future<List<ISQLiteItem>> searchColumns(
-      ISQLiteItem item, List<String> columnNames, String query,
-      {int? limit}) async {
-    var database = await getOpenDatabase();
-    String table = item.getTableName();
-    List<ISQLiteItem> results = [];
-
-    // Construct the "OR" condition for multiple columns
-    List<String> whereConditions = [];
-    List<dynamic> whereArgs = [];
-    for (var columnName in columnNames) {
-      whereConditions.add("$columnName LIKE ? COLLATE NOCASE");
-      whereArgs.add('%$query%');
-    }
-
-    // Join the conditions with "OR"
-    String whereClause = whereConditions.join(' OR ');
-
-    // Execute the query
-    var maps = await database.query(
-      table,
-      columns: null, // Fetch all columns
-      where: whereClause,
-      whereArgs: whereArgs,
-      limit: limit,
-    );
-
-    // Map the results to ISQLiteItem instances
-    results = maps.map((map) => item.fromMap(map)).toList();
-
     return results;
   }
 
