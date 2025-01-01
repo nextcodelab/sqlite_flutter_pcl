@@ -1,3 +1,7 @@
+## 0.0.45
+
+- Method renames back.
+
 ## 0.0.44
 
 ### Changes:

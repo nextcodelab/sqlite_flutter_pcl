@@ -64,7 +64,7 @@ class SqlModel implements ISQLiteItem {
     var newItem = SqlModel(title: 'Title 1', value: 'Value 1');
     await connection.insert(newItem);
     //retrieve items
-    var isqliteItems = await connection.fetchAll(SqlModel());
+    var isqliteItems = await connection.toList(SqlModel());
     //convert to type list
     var items = isqliteItems.whereType<SqlModel>().toList();
     var items = isqliteItems.cast<SqlModel>().toList();
@@ -78,16 +78,16 @@ class SqlModel implements ISQLiteItem {
     //delete items
     await connection.deleteAll(items);
     //query single value
-    var queryItems = await connection.findSingleByColumn(SqlModel(), 'title', 'Title 1');
+    var queryItems = await connection.where(SqlModel(), 'title', 'Title 1');
     //query items by value
-    var queryItems = await connection.findByColumn(SqlModel(), 'title', 'Title 1');
+    var queryItems = await connection.serchByColumn(SqlModel(), 'title', 'Title 1');
 
     // Returns a list of items with titles 'title1' and 'title2', using a batch query for efficiency.
-    var results = await connection.findAllByColumnValues(SqlModel(), 'title', ['title1', 'title2']);
+    var results = await connection.toListWhereValuesAre(SqlModel(), 'title', ['title1', 'title2']);
     
     //Search across multiple columns. 
     var columnNames = ['word', 'number', 'lemma', 'xlit', 'pronounce', 'description'];
-    var items = await db.findByColumnsAny(Strongs(), columnNames, query);
+    var items = await db.toListColumns(Strongs(), columnNames, query);
 
     //Delete all table records
     connection.deleteRecords(SqlModel());

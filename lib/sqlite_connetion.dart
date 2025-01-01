@@ -39,7 +39,7 @@ class SQLiteConnection {
   ///
   /// Example usage:
   /// var results = await connection.toListWhere(yourItem, 'column_name', 'value_to_match');
-  Future<List<ISQLiteItem>> findByColumnValue(
+  Future<List<ISQLiteItem>> toListWhere(
     ISQLiteItem item,
     String columnName,
     dynamic columnValueOf, // Allow any type (int, double, String, etc.)
@@ -61,7 +61,7 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<List<ISQLiteItem>> findByColumns(
+  Future<List<ISQLiteItem>> toListWhereMap(
     ISQLiteItem item,
     Map<String, dynamic>
         columnValues, // Map of column names and their dynamic values
@@ -125,7 +125,7 @@ class SQLiteConnection {
     var db = await getOpenDatabase();
     var map = item.toMap();
     final tableName = item.getTableName();
-    var existingColumns = await getTableColumns(tableName, db: db);
+    var existingColumns = await tableColumns(tableName, db: db);
     map.removeWhere((key, value) => !existingColumns.contains(key));
     if (map[item.getPrimaryKeyName()] is int &&
         map[item.getPrimaryKeyName()] == 0) {
@@ -147,7 +147,7 @@ class SQLiteConnection {
 
     // Get table name from the first item (assumes all items have the same table)
     var tableName = items.first.getTableName();
-    var existingColumns = await getTableColumns(tableName, db: db);
+    var existingColumns = await tableColumns(tableName, db: db);
 
     await db.transaction((txn) async {
       for (var item in items) {
@@ -171,7 +171,7 @@ class SQLiteConnection {
     final db = await getOpenDatabase();
     final map = item.toMap();
     final tableName = item.getTableName();
-    var existingColumns = await getTableColumns(tableName, db: db);
+    var existingColumns = await tableColumns(tableName, db: db);
     map.removeWhere((key, value) => !existingColumns.contains(key));
     final id = map[item.getPrimaryKeyName()];
 
@@ -192,7 +192,7 @@ class SQLiteConnection {
     // Get table name from the first item (assumes all items have the same table)
     var tableName = items.first.getTableName();
     List<String> existingColumns = [];
-    existingColumns = await getTableColumns(tableName, db: db);
+    existingColumns = await tableColumns(tableName, db: db);
     await db.transaction((txn) async {
       for (var item in items) {
         var map = item.toMap();
@@ -255,7 +255,7 @@ class SQLiteConnection {
     return totalDeleted;
   }
 
-  Future<List<ISQLiteItem>> findByColumn(
+  Future<List<ISQLiteItem>> toListWhereColumnHasValue(
       ISQLiteItem item, String columnName, dynamic columnValueOf,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -277,7 +277,7 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<ISQLiteItem?> findSingleByColumn(
+  Future<ISQLiteItem?> whereColumnHasValue(
     ISQLiteItem item,
     String columnName,
     dynamic columnValueOf,
@@ -300,7 +300,7 @@ class SQLiteConnection {
     }
   }
 
-  Future<ISQLiteItem?> findSingleByColumns(
+  Future<ISQLiteItem?> toListWhereMapMatch(
     ISQLiteItem item,
     Map<String, dynamic> columnValues, // Map of column names and their values
   ) async {
@@ -339,7 +339,7 @@ class SQLiteConnection {
   /// @param columnName The name of the column to filter by.
   /// @param columnValueList A list of values to filter the query by.
   /// @return A list of `ISQLiteItem` objects that match the query criteria.
-  Future<List<ISQLiteItem>> findAllByColumnValues(
+  Future<List<ISQLiteItem>> toListWhereValuesAre(
     ISQLiteItem item,
     String columnName,
     List<String> columnValueList,
@@ -376,7 +376,7 @@ class SQLiteConnection {
     }
   }
 
-  Future<List<ISQLiteItem>> findWhereAllMatch(
+  Future<List<ISQLiteItem>> toListWhereMapAreMatch(
       ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -458,7 +458,7 @@ class SQLiteConnection {
   /// }
   /// ```
 
-  Future<List<ISQLiteItem>> findByColumnsMatch(
+  Future<List<ISQLiteItem>> toListWhereMapAnd(
       ISQLiteItem item, Map<String, dynamic> columnNameAndValues,
       {int? limit}) async {
     String tableName = item.getTableName();
@@ -515,7 +515,7 @@ class SQLiteConnection {
   /// }
   /// ```
 
-  Future<List<ISQLiteItem>> findByColumnAny(
+  Future<List<ISQLiteItem>> search(
       ISQLiteItem item, String columnName, String query,
       {int? limit}) async {
     var database = await getOpenDatabase();
@@ -532,7 +532,7 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<List<ISQLiteItem>> findByColumnsAny(
+  Future<List<ISQLiteItem>> searchColumns(
       ISQLiteItem item, List<String> columnNames, String query,
       {int? limit}) async {
     var database = await getOpenDatabase();
@@ -594,7 +594,7 @@ class SQLiteConnection {
   ///   distinct: removeDuplicates,  // Optional flag for duplicates
   /// );
   /// ```
-  Future<List<ISQLiteItem>> getGroupedItems(
+  Future<List<ISQLiteItem>> groupBy(
       ISQLiteItem item, List<String> columns, String groupByColumnName,
       {String? orderByColumn, bool distinct = true}) async {
     var database = await getOpenDatabase();
@@ -623,7 +623,7 @@ class SQLiteConnection {
     return results;
   }
 
-  Future<int> getCount(ISQLiteItem item) async {
+  Future<int> count(ISQLiteItem item) async {
     var db = await getOpenDatabase();
     var count =
         await db.rawQuery('SELECT COUNT(*) FROM ${item.getTableName()}');
@@ -631,7 +631,7 @@ class SQLiteConnection {
     return total;
   }
 
-  Future<ISQLiteItem?> getFirstItem(ISQLiteItem item) async {
+  Future<ISQLiteItem?> first(ISQLiteItem item) async {
     final db = await getOpenDatabase();
     final tableName = item.getTableName();
 
@@ -648,7 +648,7 @@ class SQLiteConnection {
     return null;
   }
 
-  Future<ISQLiteItem?> getItemAtIndex(ISQLiteItem item, int index) async {
+  Future<ISQLiteItem?> index(ISQLiteItem item, int index) async {
     var db = await getOpenDatabase();
 
     // Using LIMIT and OFFSET to get the row at the specified index
@@ -665,14 +665,14 @@ class SQLiteConnection {
     return null; // Return null if the index is out of range or no data
   }
 
-  Future<List<String>> getTableColumns(String tableName, {Database? db}) async {
+  Future<List<String>> tableColumns(String tableName, {Database? db}) async {
     db ??= await getOpenDatabase();
     var result = await db.rawQuery("PRAGMA table_info($tableName)");
     return result.map((column) => column['name'] as String).toList();
   }
 
   //Helpers
-  Future<Batch> getBatch() async {
+  Future<Batch> batch() async {
     final db = await getOpenDatabase();
     final batch = db.batch();
     return batch;
