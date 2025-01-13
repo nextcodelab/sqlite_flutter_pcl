@@ -33,6 +33,6 @@ class SQLiteItemBatch {
   }
 
   String toPrintString() {
-    return 'NEW: ${newList.length} | UPDATE:  ${updateList.length}';
+    return 'TYPE: ${lastItem?.toString()} NEW: ${newList.length} | UPDATE:  ${updateList.length}';
   }
 }

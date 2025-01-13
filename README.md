@@ -1,3 +1,33 @@
+# SQLiteConnection Dart Library
+
+SQLiteConnection provides a streamlined interface for interacting with SQLite databases in Dart, supporting various operations like search, insert, update, delete, and more.
+
+## Features
+
+- **Search Operations**: Case-insensitive, column-specific, multi-column search.
+- **Insert Operations**: Single and batch insertions.
+- **Update Operations**: Single and batch updates with conflict handling.
+- **Delete Operations**: Single and batch deletions.
+- **Advanced Queries**: Group by, pagination, and random row retrieval.
+- **Database Management**: Table creation, dropping, and backups.
+
+## Getting Started
+
+Add the package to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  sqlite_flutter_pcl: ^1.0.0
+```
+
+## Basic Usage
+
+### Initialization
+
+```dart
+
+import 'package:sqlite_flutter_pcl/sqlite_connection.dart';
+
 # Create table class implements ISQLiteItem
 
 ```dart
@@ -78,9 +108,9 @@ class SqlModel implements ISQLiteItem {
     //delete items
     await connection.deleteAll(items);
     //query single value
-    var queryItems = await connection.where(SqlModel(), 'title', 'Title 1');
+    var queryItems = await connection.toListWhere(SqlModel(), 'title', 'Title 1');
     //query items by value
-    var queryItems = await connection.serchByColumn(SqlModel(), 'title', 'Title 1');
+    var queryItems = await connection.searchColumns(SqlModel(), 'title', 'Title 1');
 
     // Returns a list of items with titles 'title1' and 'title2', using a batch query for efficiency.
     var results = await connection.toListWhereValuesAre(SqlModel(), 'title', ['title1', 'title2']);
@@ -103,5 +133,121 @@ class SqlModel implements ISQLiteItem {
     return path;
   }
 ```
+
+### Item
+
+```
+var sqlItem = SqlModel(title: 'Title 1', value: 'Value 1');
+```
+#### Single Item
+```dart
+final id = await connection.insert(sqlItem);
+```
+
+#### Multiple Items
+```dart
+final totalInserted = await connection.insertAll(sqlItems);
+```
+
+### Update Data
+
+#### Single Item
+```dart
+await connection.update(sqlItem);
+```
+
+#### Multiple Items
+```dart
+final totalUpdated = await connection.updateAll(sqlItems);
+```
+
+### Delete Data
+
+#### Single Item
+```dart
+final rowsDeleted = await connection.delete(sqlItem);
+```
+
+#### Multiple Items
+```dart
+final totalDeleted = await connection.deleteAll(sqlItems);
+```
+
+### Search Data
+
+#### Single Column Search
+```dart
+final results = await connection.search(sqlItem, 'columnName', 'searchQuery');
+```
+
+#### Multiple Column Search
+```dart
+final results = await connection.searchColumns(
+  sqlItem,
+  ['column1', 'column2'],
+  'searchQuery',
+);
+```
+
+#### Exact Match
+```dart
+final result = await connection.whereColumnHasValue(sqlItem, 'columnName', value);
+```
+
+### Query Data
+
+#### Get All Rows
+```dart
+final items = await connection.toList(sqlItem);
+```
+
+#### Filtered Rows
+```dart
+final items = await connection.toListWhereColumnHasValue(sqlItem, 'columnName', value);
+```
+
+#### Paginated Rows
+```dart
+final items = await connection.paginate(sqlItem, limit: 10, offset: 20);
+```
+
+#### Grouped Rows
+```dart
+final items = await connection.groupBy(
+  sqlItem,
+  ['column1', 'column2'],
+  'groupByColumn',
+  orderByColumn: 'orderByColumn',
+);
+```
+
+### Utility Functions
+
+- **Backup Database**
+  ```dart
+  await connection.backupDatabase('/path/to/backup.db');
+  ```
+
+- **Drop Table**
+  ```dart
+  await connection.dropTable(sqlItem);
+  ```
+
+- **Vacuum Database**
+  ```dart
+  await connection.vacuum(sqlItem);
+  ```
+
+- **Count Rows**
+  ```dart
+  final count = await connection.count(sqlItem);
+  ```
+
+- **Retrieve Table Columns**
+  ```dart
+  final columns = await connection.tableColumns('tableName');
+  ```
+
+---
 
 [https://pub.dev/packages/sqlite_flutter_pcl](https://pub.dev/packages/sqlite_flutter_pcl)

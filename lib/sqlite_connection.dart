@@ -244,37 +244,44 @@ class SQLiteConnection {
   }
 
   Future<int> updateAll(
-    List<ISQLiteItem> items,
-  ) async {
-    if (items.isEmpty) return 0; // Early exit if the list is empty
+  List<ISQLiteItem> items,
+) async {
+  if (items.isEmpty) return 0; // Early exit if the list is empty
 
-    var db = await getOpenDatabase();
-    int totalRow = 0;
+  var db = await getOpenDatabase();
+  int totalRow = 0;
 
-    // Get table name from the first item (assumes all items have the same table)
-    var tableName = items.first.getTableName();
-    List<String> existingColumns = [];
-    existingColumns = await tableColumns(tableName, db: db);
-    await db.transaction((txn) async {
-      for (var item in items) {
-        var map = item.toMap();
-        map.removeWhere((key, value) => !existingColumns.contains(key));
-        if (map[item.getPrimaryKeyName()] is int &&
-            map[item.getPrimaryKeyName()] == 0) {
-          map[item.getPrimaryKeyName()] = null;
-        }
-        final id = map[item.getPrimaryKeyName()];
-        if (id != null && id > 0) {
-          var result = await txn.update(tableName, map);
-          if (result > 0) {
-            totalRow++;
-          }
+  // Get table name from the first item (assumes all items have the same table)
+  var tableName = items.first.getTableName();
+  List<String> existingColumns = [];
+  existingColumns = await tableColumns(tableName, db: db);
+  
+  await db.transaction((txn) async {
+    for (var item in items) {
+      var map = item.toMap();
+      map.removeWhere((key, value) => !existingColumns.contains(key));
+      if (map[item.getPrimaryKeyName()] is int &&
+          map[item.getPrimaryKeyName()] == 0) {
+        map[item.getPrimaryKeyName()] = null;
+      }
+      final id = map[item.getPrimaryKeyName()];
+      if (id != null && id > 0) {
+        // Update with a WHERE clause
+        var result = await txn.update(
+          tableName,
+          map,
+          where: '${item.getPrimaryKeyName()} = ?',
+          whereArgs: [id],
+        );
+        if (result > 0) {
+          totalRow++;
         }
       }
-    });
+    }
+  });
 
-    return totalRow;
-  }
+  return totalRow;
+}
 
   Future<int> delete(ISQLiteItem item) async {
     var db = await getOpenDatabase();
