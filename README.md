@@ -17,7 +17,7 @@ Add the package to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  sqlite_flutter_pcl: ^1.0.0
+  sqlite_flutter_pcl: ^0.0.50
 ```
 
 ## Basic Usage
