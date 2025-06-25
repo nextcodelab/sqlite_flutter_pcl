@@ -184,17 +184,26 @@ class SQLiteConnection {
   }
 
   Future<int> insert(ISQLiteItem item) async {
-    var db = await getOpenDatabase();
-    var map = item.toMap();
+    final db = await getOpenDatabase();
+    final map = item.toMap();
     final tableName = item.getTableName();
-    var existingColumns = await tableColumns(tableName, db: db);
-    map.removeWhere((key, value) => !existingColumns.contains(key));
-    if (map[item.getPrimaryKeyName()] is int &&
-        map[item.getPrimaryKeyName()] == 0) {
-      map[item.getPrimaryKeyName()] = null;
+    final primaryKey = item.getPrimaryKeyName();
+
+    // Remove any fields not existing in the current table schema
+    final existingColumns = await tableColumns(tableName, db: db);
+    map.removeWhere((key, _) => !existingColumns.contains(key));
+
+    // If primary key is explicitly 0 or null, remove it so SQLite will autogenerate
+    if (map.containsKey(primaryKey)) {
+      final value = map[primaryKey];
+      if (value == null || value == 0) {
+        //map.remove(primaryKey);
+        map[primaryKey] = null;
+      }
     }
-    var row = await db.insert(tableName, map);
-    return row;
+
+    final rowId = await db.insert(tableName, map);
+    return rowId;
   }
 
   Future<int> insertAll(
@@ -711,69 +720,53 @@ class SQLiteConnection {
     }
   }
 
-  //Initial
-  Future<void> createTable(ISQLiteItem item,
-      {bool autoIncrement = true}) async {
+  Future<void> createTable(ISQLiteItem item) async {
     final db = await getOpenDatabase();
     final tableName = item.getTableName();
     final primaryKey = item.getPrimaryKeyName();
-
-    final columns = <String>[];
     final map = item.toMap();
 
-    map.forEach((key, value) {
-      if (key == primaryKey) {
-        if (value is int) {
-          if (autoIncrement) {
-            columns.add('$key INTEGER PRIMARY KEY AUTOINCREMENT');
-          } else {
-            columns.add('$key INTEGER');
-          }
-        } else if (value is String) {
-          columns.add('$key TEXT PRIMARY KEY');
-        } else if (value is Uint8List) {
-          columns.add('$key BLOB'); // Add a BLOB column for byte arrays
+    final existingColumns = await tableColumns(tableName, db: db);
+
+    if (existingColumns.isEmpty) {
+      // Table doesn't exist yet; create with full schema
+      final columns = <String>[];
+
+      map.forEach((key, value) {
+        if (key == primaryKey) {
+          columns.add('$key INTEGER PRIMARY KEY AUTOINCREMENT');
         } else {
-          if (autoIncrement) {
-            columns.add('$key INTEGER PRIMARY KEY AUTOINCREMENT');
-          } else {
-            columns.add('$key INTEGER');
-          }
+          columns.add('$key ${_getSQLiteType(value)}');
         }
-      } else {
-        if (value is int) {
-          columns.add('$key INTEGER');
-        } else if (value is double) {
-          columns.add('$key REAL');
-        } else if (value is bool) {
-          columns.add('$key INTEGER');
-        } else if (value is Uint8List) {
-          columns.add('$key BLOB'); // Add a BLOB column for byte arrays
-        } else {
-          columns.add('$key TEXT');
+      });
+
+      final createTableSQL =
+          'CREATE TABLE IF NOT EXISTS $tableName (${columns.join(', ')});';
+
+      print('[CREATE] Executing SQL: $createTableSQL');
+      await db.execute(createTableSQL);
+    } else {
+      // Table exists, check for missing columns and alter
+      for (final entry in map.entries) {
+        if (!existingColumns.contains(entry.key)) {
+          final sqlType = _getSQLiteType(entry.value);
+          final alterSQL =
+              'ALTER TABLE $tableName ADD COLUMN ${entry.key} $sqlType';
+
+          print('[ALTER] Executing SQL: $alterSQL');
+          await db.execute(alterSQL);
         }
       }
-    });
 
-    final createTableQuery =
-        'CREATE TABLE IF NOT EXISTS $tableName (${columns.join(', ')});';
-
-    await db.execute(createTableQuery);
-    //start primarykey to 1
-    // Check the current sequence value for the table
-
-    // If the current sequence value is 0, reset it to 1
-    if (autoIncrement && map.containsKey('id')) {
-      var currentSeq = Sqflite.firstIntValue(
-              await db.rawQuery('PRAGMA table_info($tableName)')) ??
-          0;
-      if (currentSeq < 1) {
-        await db.rawUpdate(
-          'UPDATE sqlite_sequence SET seq = 1 WHERE name = ?',
-          [tableName],
-        );
-      }
+      print('[INFO] Existing columns in $tableName: $existingColumns');
     }
+  }
+
+  static String _getSQLiteType(dynamic value) {
+    if (value is int || value is bool) return 'INTEGER';
+    if (value is double) return 'REAL';
+    if (value is Uint8List) return 'BLOB';
+    return 'TEXT';
   }
 
   //Static methods
