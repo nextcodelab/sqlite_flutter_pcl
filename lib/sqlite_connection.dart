@@ -15,6 +15,11 @@ class SQLiteConnection {
     initDatabaseLib();
   }
 
+  Future<void> dispose() async {
+    final db = await getOpenDatabase();
+    await db.close();
+  }
+
   Future<Database> getOpenDatabase() async {
     var database = await openDatabase(path, version: 1);
     return database;
