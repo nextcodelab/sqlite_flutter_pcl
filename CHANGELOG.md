@@ -1,3 +1,7 @@
+## 0.0.51
+
+- Fixed error no table exist
+
 ## 0.0.50
 
 - Minor

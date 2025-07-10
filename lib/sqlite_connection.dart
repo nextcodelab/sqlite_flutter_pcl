@@ -573,6 +573,10 @@ class SQLiteConnection {
 
   Future<int> count(ISQLiteItem item) async {
     var db = await getOpenDatabase();
+    var exist = await tableExists(item.getTableName());
+    if (!exist) {
+      return 0; // If the table doesn't exist, return false
+    }
     var count =
         await db.rawQuery('SELECT COUNT(*) FROM ${item.getTableName()}');
     var total = Sqflite.firstIntValue(count) ?? 0;
@@ -581,6 +585,10 @@ class SQLiteConnection {
 
   Future<bool> hasItems(ISQLiteItem item) async {
     var db = await getOpenDatabase();
+    var exist = await tableExists(item.getTableName());
+    if (!exist) {
+      return false; // If the table doesn't exist, return false
+    }
     var result = await db.rawQuery(
         'SELECT EXISTS (SELECT 1 FROM ${item.getTableName()} LIMIT 1)');
     return result.isNotEmpty && result.first.values.first == 1;
@@ -621,9 +629,22 @@ class SQLiteConnection {
   }
 
   Future<List<String>> tableColumns(String tableName, {Database? db}) async {
-    db ??= await getOpenDatabase();
-    var result = await db.rawQuery("PRAGMA table_info($tableName)");
-    return result.map((column) => column['name'] as String).toList();
+    try {
+      db ??= await getOpenDatabase();
+
+      final result = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+        [tableName],
+      );
+
+      if (result.isEmpty) return []; // Safe fallback if table doesn't exist
+
+      final info = await db.rawQuery("PRAGMA table_info($tableName)");
+      return info.map((column) => column['name'] as String).toList();
+    } catch (e) {
+      print('[ERROR] tableColumns($tableName): $e');
+      return []; // Safe fallback on any exception
+    }
   }
 
   //Helpers
@@ -725,18 +746,38 @@ class SQLiteConnection {
     }
   }
 
+  Future<bool> tableExists(String tableName) async {
+    try {
+      var db = await getOpenDatabase();
+      // final result = await db.rawQuery(
+      //   "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
+      //   [tableName],
+      // );
+  
+      final result = await db.query(
+        'sqlite_master',
+        where: 'type = ? AND name = ?',
+        whereArgs: ['table', tableName],
+      );
+
+      return result.isNotEmpty;
+    } catch (e) {
+      print('[ERROR] tableExists($tableName): $e');
+      return false;
+    }
+  }
+
   Future<void> createTable(ISQLiteItem item) async {
     final db = await getOpenDatabase();
     final tableName = item.getTableName();
     final primaryKey = item.getPrimaryKeyName();
     final map = item.toMap();
 
-    final existingColumns = await tableColumns(tableName, db: db);
+    final exists = await tableExists(tableName);
 
-    if (existingColumns.isEmpty) {
-      // Table doesn't exist yet; create with full schema
+    if (!exists) {
+      // Table doesn't exist; create with full schema
       final columns = <String>[];
-
       map.forEach((key, value) {
         if (key == primaryKey) {
           columns.add('$key INTEGER PRIMARY KEY AUTOINCREMENT');
@@ -747,11 +788,12 @@ class SQLiteConnection {
 
       final createTableSQL =
           'CREATE TABLE IF NOT EXISTS $tableName (${columns.join(', ')});';
-
       print('[CREATE] Executing SQL: $createTableSQL');
       await db.execute(createTableSQL);
     } else {
-      // Table exists, check for missing columns and alter
+      // Table exists, check for missing columns
+      final existingColumns = await tableColumns(tableName, db: db);
+
       for (final entry in map.entries) {
         if (!existingColumns.contains(entry.key)) {
           final sqlType = _getSQLiteType(entry.value);

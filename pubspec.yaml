@@ -1,6 +1,6 @@
 name: sqlite_flutter_pcl
 description:  is a Flutter library that simplifies SQLite database management in your applications. It provides a clean and intuitive API for creating, reading, updating, and deleting database records, making it easy to work with structured data. With support for data modeling, pagination, and backup functionality, this library enhances your app's data persistence capabilities, allowing developers to focus on building rich user experiences without worrying about underlying database complexities.
-version: 0.0.50
+version: 0.0.51
 homepage: https://github.com/nextcodelab/sqlite_flutter_pcl
 repository: https://github.com/nextcodelab/sqlite_flutter_pcl
 documentation: https://github.com/nextcodelab/sqlite_flutter_pcl/blob/master/README.md
