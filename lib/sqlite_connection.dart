@@ -748,21 +748,18 @@ class SQLiteConnection {
 
   Future<bool> tableExists(String tableName) async {
     try {
-      var db = await getOpenDatabase();
-      // final result = await db.rawQuery(
-      //   "SELECT name FROM sqlite_master WHERE type='table' AND name = ?",
-      //   [tableName],
-      // );
-  
+      final db = await getOpenDatabase();
+
       final result = await db.query(
-        'sqlite_master',
-        where: 'type = ? AND name = ?',
-        whereArgs: ['table', tableName],
+        'sqlite_sequence',
+        columns: ['name'],
       );
 
-      return result.isNotEmpty;
+      final tableNames = result.map((row) => row['name'] as String).toList();
+
+      return tableNames.contains(tableName);
     } catch (e) {
-      print('[ERROR] tableExists($tableName): $e');
+      print('[ERROR] tableExistsViaSequence($tableName): $e');
       return false;
     }
   }
