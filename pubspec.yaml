@@ -5,7 +5,7 @@ homepage: https://github.com/nextcodelab/sqlite_flutter_pcl
 repository: https://github.com/nextcodelab/sqlite_flutter_pcl
 documentation: https://github.com/nextcodelab/sqlite_flutter_pcl/blob/master/README.md
 environment:
-  sdk: ^3.8.1
+  sdk: ^3.9.2
 
 dependencies:
   flutter:
