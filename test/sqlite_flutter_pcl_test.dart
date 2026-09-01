@@ -85,7 +85,7 @@ class Tester {
     //delete items
     await connection.deleteAll(items);
     //query single value
-    var queryItems = await connection.where(SqlModel(), 'title', 'Title 1');
+    var queryItems = await connection.(SqlModel(), 'title', 'Title 1');
     //search items
     var searchItems = await connection.search(SqlModel(), 'title', 'title 1');
     //query with multiple columns
